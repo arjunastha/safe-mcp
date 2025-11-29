@@ -1,310 +1,234 @@
-# SAFE-T2103 - Code Sabotage via Malicious Agentic Pull Request
+# SAFE‑T2103 — Code Sabotage (Agent commits malicious PR into repo)
 
-**Tactics:** Impact, Initial Access, Persistence, Credential Access  
-**Technique ID:** SAFE-T2103  
-**Status:** Stable (v1.0)  
-**First Observed:** July 2025 (Amazon Q VS Code PR incident) [1][2]  
-**Last Updated:** 2025-11-22  
-**Author:** Pratikshya Regmi
+> **Technique type:** Impact (ATK‑TA0040)  
+> **SAFE‑MCP ID:** SAFE‑T2103  
+> **Status:** Stable  
+> **Severity:** High  
+> **First observed (in the wild):** 2018–2021 open‑source incidents demonstrating feasibility (e.g., `event‑stream` dependency hijack; Linux “hypocrite commits”). [1][2][3][4]  
+> **Last updated:** 2025‑11‑29
 
 ---
 
 ## Summary
 
-**Code Sabotage via Malicious Agentic Pull Request** covers attacks where an adversary abuses an **agentic AI or automation account** (bot, CI assistant, MCP-connected coding agent) to submit a seemingly legitimate **pull request (PR)** that introduces malicious changes into a codebase or CI/CD workflow. The PR may:
+Adversaries can manipulate an AI agent (or operate a compromised/malicious agent) to **propose or commit code changes that introduce backdoors, exfiltration paths, or latent vulnerabilities** into a target repository. In Model Context Protocol (MCP) environments, agents commonly have access to developer tooling (e.g., Git/GitHub clients, CI/CD) via MCP servers/tools. If repository permissions and CI policies are weak, a poisoned or over‑privileged agent can open a **pull request (PR)** that appears legitimate—passing tests and code style checks—yet embeds harmful logic or dependency changes that will be merged and shipped downstream.
 
-- add backdoors or logic bombs,  
-- weaken or bypass authentication, logging, or security checks,  
-- exfiltrate secrets during builds, or  
-- weaponize AI tools and extensions used by developers.
+Real‑world precedents show this class of attack is feasible even without AI: the 2018 `event‑stream` compromise inserted malicious dependency code that targeted cryptocurrency wallets, and the 2021 Linux “hypocrite commits” incident demonstrated how seemingly benign patches could smuggle subtle bugs. [1][2][3][4] With MCP‑connected agents capable of autonomous coding and PR workflows, the **time‑to‑impact and blast radius** increase unless organizations enforce rigorous trust and review controls.
 
-MITRE ATT&CK’s **T1677 – Poisoned Pipeline Execution** explicitly calls out **malicious PRs** as a way to poison CI/CD pipelines by modifying configuration files, build scripts, and workflows [3][4][5]. Real-world incidents show that compromised actions, extensions, or repos can leak thousands of secrets or ship malicious artifacts when a PR is merged into trusted code [6][7][8].
-
-In July 2025, a GitHub pull request to the **Amazon Q Developer VS Code extension** injected a covert prompt instructing the AI assistant to “clean a system to a near-factory state and delete file-system and cloud resources,” demonstrating that a single PR against an AI-assisted developer tool can attempt **mass data destruction and cloud resource deletion** [1][2]. Similar research and incidents with **malicious PRs against GitHub Actions and CI workflows** show how attackers can exfiltrate secrets or gain persistent access by altering build pipelines [6][7][8][9].
+> **SAFE‑MCP context:** SAFE‑T2103 appears in the SAFE‑MCP TTP table under **Impact** as “Code Sabotage — Agent commits malicious PR into repo.” [5]
 
 ---
 
-## ATT&CK / ATLAS Mapping
+## ATT&CK® mappings (informative)
 
-- **MITRE ATT&CK**
-  - **T1677 – Poisoned Pipeline Execution** — adversaries poison CI/CD pipelines via malicious PRs, modified workflows, and corrupted build scripts [3][4][5].  
-  - **T1195 – Supply Chain Compromise** — compromise third-party dependencies, actions, or extensions through PRs that introduce malicious code [10].  
-  - **T1552 – Unsecured Credentials** — exfiltrate secrets by modifying pipelines or tools to dump tokens/keys at build/runtime [8][9].  
-
-- **MITRE ATLAS (Adversarial ML)**  
-  - Relevant where the sabotaged component is an **AI coding assistant, LLM tool, or agent**, especially if the PR modifies prompts, safety policies, or tool-use behavior for an AI system (e.g., Amazon Q VS Code incident) [1][2][11].  
-
-- **OWASP / Supply Chain Guidance**
-  - Supply-chain and CI/CD security guidance from GitHub, CISA, Unit 42, and others emphasize that **PRs to workflows, actions, and extensions** must be treated as high-risk changes [6][7][8][10][12].
+- **T1195 – Supply Chain Compromise** (incl. **T1195.001** Compromise Dependencies/Dev Tools; **T1195.002** Compromise Software Supply Chain). [6][7][8]
+- **T1565 – Data Manipulation** (impact by altering source code/data to influence downstream behavior). [9]
+- **T1553 – Subvert Trust Controls** (e.g., abusing review/signing policies or misconfigurations to gain trust). [10]
 
 ---
 
-## Technical Description
+## Why it matters
 
-A typical modern dev + CI/CD environment:
-
-1. Source code hosted on GitHub/GitLab/Bitbucket.  
-2. CI/CD pipelines triggered by PRs.  
-3. AI/automation: **coding agents, Dependabot-style bots, or MCP agents** that can open PRs and modify code.  
-
-SAFE-T2103 focuses on **attacker-controlled or attacker-influenced PRs that look legitimate but sabotage code**. Key patterns:
-
-1) **Malicious Changes to CI/CD Workflows (T1677).**  
-   The PR modifies workflow files (e.g., `.github/workflows/*.yml`, `Jenkinsfile`) so CI runs attacker-controlled commands. Examples from real incidents include:  
-   - running arbitrary scripts from attacker domains,  
-   - exfiltrating secrets and tokens,  
-   - altering job permissions so future PRs run with elevated scopes [6][7][8][9].
-
-2) **Sabotage of Application or Library Code.**  
-   PRs add or modify code paths to:  
-   - introduce logic bombs (triggered under specific conditions),  
-   - disable authentication/authorization checks,  
-   - silently log and exfiltrate credentials or sensitive data,  
-   - add hidden backdoors to libraries or extensions shipped to thousands of developers [5][6][8][13].
-
-3) **Weaponization of AI Coding/Dev Tools.**  
-   PRs targeting **AI-powered IDE extensions or coding agents** modify prompts or handlers so the agent:  
-   - executes destructive commands (local/cloud),  
-   - exfiltrates data via its tools,  
-   - or undermines safety policies.  
-   The Amazon Q VS Code incident showed a PR embedding a prompt that instructed the agent to wipe local files and cloud resources using AWS CLI [1][2][11].  
-
-4) **Agentic/Bot Origin.**  
-   In MCP environments, an **agent** may:  
-   - automatically propose “fixes” and refactors,  
-   - respond to prompt injection from untrusted repositories or issues,  
-   - or operate under a bot/service account that is granted PR permissions.  
-   Once compromised or mis-prompted, the agent becomes the **apparent author** of the malicious PR, blending in with other automation (Dependabot, Renovate, etc.) [11][12][14].
-
-**Stealth:**  
-- PR titles and descriptions are benign (e.g., “chore: refactor logging,” “fix tests”).  
-- Changes may be large AI-generated diffs where a few lines embed the actual payload.  
-- Automated tests often still pass; sabotage may only trigger under rare conditions or in production environments [5][6][8][11].
+- **Integrity risk:** Malicious PRs change the canonical source of truth; downstream consumers inherit the compromise.
+- **Supply‑chain amplification:** A single merged change can propagate to **thousands of dependents** (packages, services, containers). [1][7]
+- **Agentic acceleration:** MCP‑connected agents can iterate and re‑submit until reviews pass, and may also **modify CI workflows** to escalate (e.g., unsafe `pull_request_target` patterns). [11][12][13]
 
 ---
 
-## Architecture Diagram
+## Attack vectors
+
+**Primary**
+- **Agent‑driven PR with planted backdoor** (e.g., obfuscated logic, environment‑driven payloads, covert exfiltration calls).
+- **Dependency file manipulation** (e.g., add/update a dependency that contains malicious code or post‑install scripts). [1][3][7]
+- **CI workflow escalation via PR** (e.g., introduce or modify `.github/workflows/*` to run with elevated context using unsafe triggers like `pull_request_target`, enabling write permissions or secrets exposure). [11][12][13]
+
+**Secondary / enabling**
+- **Weak branch protections** (no required reviews/owners/status checks; unsigned commits). [14][15][16][17]
+- **Blind trust in green CI** (insufficient CodeQL/secret scanning coverage). [18][19][20][21]
+- **Over‑privileged tokens** attached to the agent (write/maintain on critical branches).
+
+---
+
+## Prerequisites and assumptions
+
+- The agent (or attacker controlling it) can authenticate to the VCS host (e.g., GitHub) and **create branches and PRs** in the target repo (via MCP Git/GitHub tools or other connectors).
+- The repo allows PRs from the agent’s context (member/maintainer or fork PRs) and **insufficiently enforces** reviews/status checks/signing.
+- CI settings may allow **unsafe use of secrets** or privileged workflows for untrusted PR contexts (e.g., misused `pull_request_target`). [11][12][13]
+
+---
+
+## Technical details and flow
 
 ```mermaid
-flowchart LR
-  X["Attacker"] -->|"prompt injection / token theft"| A["AI Agent / Bot"]
-  X -->|"compromised account"| G["Git Host"]
+sequenceDiagram
+    participant A as Attacker
+    participant AG as MCP Agent
+    participant GH as VCS Host (e.g., GitHub)
+    participant CI as CI/CD
+    participant R as Reviewers
 
-  A -->|"opens PR"| G
-  G -->|"runs CI on PR"| C["CI/CD Pipeline"]
-  C -->|"deploys"| P["Production / Users"]
-
-  G -->|"changes in"| W["Workflows / Code / AI Prompts"]
-
-  W -. "poisoned config & code" .-> C
-  C -. "sabotaged build" .-> P
-
+    A->>AG: Poison prompt / tool output / direct control
+    AG->>GH: Create feature branch + commit changes
+    AG->>GH: Open PR (title/msg appear benign)
+    GH->>CI: Run checks (tests, linters, scanners)
+    Note over CI: Insufficient rules or unsafe workflow <br/> (e.g., pull_request_target misuse)
+    CI-->>GH: Status: pass/neutral (or bypass)
+    GH-->>R: Request review (maybe CODEOWNERS not enforced)
+    R-->>GH: Approve (or auto-merge rules trigger)
+    GH->>main: Merge PR → malicious code lands
+    main->>Downstream: Propagates via releases, packages, images
 ```
-## Sub-Techniques
 
-**SAFE-T2103.001 — CI/CD Workflow Sabotage via PR.**  
-Attacker (or compromised agent) modifies CI workflows / pipelines via PR to exfiltrate secrets, run arbitrary commands, or weaken build defenses (aligns with T1677) [3][4][6][8][9].
+Representative manipulations seen in the wild (adapted to agent PR context)
 
-**SAFE-T2103.002 — Application/Library Code Backdoor via PR.**  
-Malicious PR introduces hidden backdoors, exfiltration logic, or logic bombs into application or library code, often in widely used projects or extensions (supply chain compromise) [5][6][8][10][13].
+Dependency hijack: modify package.json to add a transitive malware (flatmap-stream pattern). [1][3][7][22]
 
-**SAFE-T2103.003 — AI Tool & Agent Prompt/Config Sabotage via PR.**  
-PRs targeting AI coding agents or IDE extensions modify prompts, configuration, or tool integration so the agent executes destructive or exfiltrating behavior, as seen in the Amazon Q VS Code PR incident [1][2][11][14].
+Stealth exfiltration: add an analytics/telemetry helper that conditionally exfiltrates secrets (only in prod).
 
----
+CI privilege escalation: add/alter workflow to run on pull_request_target and check out untrusted code with write token or secrets (classic “pwn request”). [11][12][13]
 
-## Adversary Playbook (Procedures)
+Example scenarios
 
-### Recon.
+Backdoor via code generation
 
-- Identify repos where PRs trigger privileged workflows or produce widely distributed artifacts (extensions, actions, SDKs, containers) [6][7][8][10].
-- Map maintainers, bot accounts, and CI/CD configurations; target repos that accept PRs from forks or automation with limited scrutiny [5][6][9].
+Agent proposes performance “caching” helper; hides eval/subprocess branch when env var exists. Tests don’t cover the branch; reviewers skim a large diff.
 
-### Initial Access.
+Impact: runtime RCE/exfiltration; triggers only in production.
 
-- Compromise maintainer accounts or CI/bot tokens (phishing, credential stuffing, token theft in other supply-chain attacks) [8][9][14].
-- Abuse misconfigured PR workflows that run untrusted code with access to secrets [6][7][9].
-- In MCP settings, exploit prompt injection or misconfigured MCP servers to take control of an agent that can open PRs [11][14].
+Malicious dependency introduction
 
-### PR Crafting.
+Agent updates dependencies to “fix vulnerabilities” but pins a malicious package; backdoor executes in a post‑install hook at build time—similar to the event‑stream incident. [1][3][7][22]
 
-- Make small, plausible changes (refactors, test fixes) in large diffs.
-- Hide payloads in workflow files, build scripts, or extension code.
-- In AI coding tools, encode malicious behavior in prompts/instructions rather than obvious code [1][2][11].
+CI workflow abuse
 
-### Submission & Social Engineering.
+Agent PR adds a new workflow on pull_request_target that checks out the PR head and runs arbitrary scripts with repo secrets/write permissions, exfiltrating tokens and silently pushing follow‑up changes. [11][12][13]
 
-- Submit PRs with benign titles/descriptions (“modernize codebase,” “update dependencies”).
-- Target maintainers with high review load; rely on trust in bots/automation.
-- Chain multiple PRs to gradually introduce more powerful sabotage.
+Indicators of compromise (IoCs)
 
-### Activation.
+PRs that modify security‑sensitive files: .github/workflows/*, package.json/requirements.txt, auth middleware, crypto helpers, telemetry wrappers, dependency lock files.
 
-Once merged, sabotage triggers when:
+Code patterns: eval, exec, subprocess, unsafe deserialization (pickle, unsafe yaml.load), unexpected network beacons, base64 blobs; obfuscated/minified blocks inserted in atypical areas.
 
-- CI runs on sensitive repos and secrets are available,
-- users install/update a compromised extension,
-- or specific runtime conditions (time, environment variable, or user role) are met [1][2][6][8][13].
+Abnormal commit/PR metadata: unsigned/unverified commits, unusual author emails, atypical burst of contributions, new dependencies with low reputation.
 
----
+CI logs invoking privileged workflows for untrusted PRs; references to GITHUB_TOKEN with write scopes in PR context. [11][12][13]
 
-## Detection
+Detection
 
-### Signals & Heuristics
+Static signals
 
-#### High-Risk PR Surface.
+CodeQL/code scanning on PRs (not just default branch) with custom queries for dangerous APIs, insecure deserialization, covert exfiltration, suspicious process exec. [18][21]
 
-PR modifies any of:
+Dependency risk scanning (SCA) to flag newly‑added packages, unusual install scripts, and reputation signals. [7][22]
 
-- `.github/workflows/`, `.gitlab-ci.yml`, `Jenkinsfile`, `azure-pipelines.yml`,
-- deployment manifests (`k8s/`, `infra/`, `deploy/`, `Dockerfile`),
-- security-sensitive modules (auth, logging, secret handling).
+Configuration & workflow signals
 
-Combine with authorship = bot/agent/service account or unusual human account [3][4][6][8][9][11].
+Alerts on additions/changes to .github/workflows/*, especially use of pull_request_target, workflow_run, or write‑scoped tokens in PR context. [11][12][13]
 
-#### Suspicious Workflow Changes.
+Enforce secret scanning and push protection to catch credential exfil in changes. [19][20]
 
-- New or changed steps invoking: `curl`, `wget`, `Invoke-WebRequest`, `bash -c`, or remote scripts.
-- Addition of data-exfil patterns (upload to unknown hosts, extra logging of secrets, environment dumps) [6][7][8][9].
+Behavioral
 
-#### Anomalous PR Metadata.
+Require verified (signed) commits; alert on merges containing unsigned or non‑verified commits to protected branches. [17]
 
-- PRs from new/low-reputation accounts or from agent/bot accounts that normally don’t touch high-risk paths.
-- PRs with small/benign descriptions but large or complex changes, especially in workflows or AI tools [5][6][8][11][12].
+Outlier analysis on PR size vs. review time, reviewer overlap, or modules touched (e.g., security‑critical code changed by non‑owners).
 
-#### Temporal / Campaign Indicators.
+Tip: Treat green CI as necessary but not sufficient. Add organization‑level rules and reviews that cannot be bypassed by CI configuration changes in the PR itself.
 
-- Multiple repos receiving similar PRs (same commit message/changes), as seen in broad supply chain campaigns [6][8][14].
-- Sudden spike in PRs from a specific bot/agent after changes to its configuration or prompts [11][14].
+Mitigations
 
-### Log Sources
+Preventive controls
 
-- Git hosting audit logs (PR events, authors, changed file paths, IPs, user agents) [3][4][5][6][8].
-- CI/CD logs and job metadata (steps, scripts, external network calls, secrets access) [4][6][7][9].
-- MCP / AI agent telemetry (tool calls to Git, prompts that mention editing workflows or prompts) [11][14].
-- Extension and application telemetry (for compromised IDE tools or libraries) [1][2][13].
+Branch protection rules:
 
-### Example Analytic
+Require PRs for protected branches; require ≥1–2 approving reviews; require review from CODEOWNERS on sensitive paths; dismiss stale approvals on new pushes. [14][15][16][18]
 
-Detect PRs where:
+Require status checks (tests, CodeQL, SCA, policies) to pass before merge. [14][16]
 
-- Author is a bot/agent/service account **AND**
-- Files changed include CI/CD workflows, deployment manifests, or AI extension code **AND**
-- Diff introduces or modifies commands that:
-  - call external URLs,
-  - dump environment variables,
-  - or alter permission scopes.
+Require signed commits on protected branches. [17]
 
-Raise severity if:
+Secure CI for untrusted contributions:
 
-- The PR comes from a new account or unusual IP,
-- or the repo produces widely distributed artifacts (IDE extensions, SDKs, actions).
+Do not use pull_request_target to checkout/run untrusted code with write/secrets. If you must report results to PRs, split workflows: analyze untrusted code under pull_request (no secrets), then publish results via a separate trusted job. [11][12][13]
 
----
+Restrict default GITHUB_TOKEN permissions; prefer read‑only on PR workflows.
 
-## Mitigations
+Supply‑chain hardening:
 
-Each block heading uses a single mitigation tag, following the SAFE-T3001 style.
+Enforce dependency policies (allow‑lists, pinning, review of new deps); generate SBOMs and gate builds on SCA results. [7][23][24]
 
-### Access & Permissions — Mitigation: SAFE-M-5: Least-Privilege Agents
+Adopt SLSA provenance for builds/releases; verify signatures (e.g., Sigstore/cosign for containers) in CI policy gates. [25][26][27]
 
-- Treat MCP agents, bots, and service accounts as privileged insiders; grant read-only by default.
-- Restrict agents from editing CI/CD workflows, deployment manifests, or AI prompts unless explicitly approved.
-- Use branch protection so only trusted humans can merge into protected branches [3][4][6][8][10][11][12].
+Least‑privilege agent tokens in MCP workflows: ensure the Git/GitHub tools exposed to agents have minimal scopes; prefer short‑lived tokens and repo‑scoped permissions.
 
-### Workflow & CI/CD Hardening — Mitigation: SAFE-M-12: Audit Logging
+Detective & response
 
-- Separate workflows for untrusted PRs vs privileged tasks; run untrusted PRs with no production secrets and constrained runners [4][6][7][9].
-- Require manual approval and security review for any PR touching workflows, deployment configs, or secret wiring.
-- Maintain detailed CI/CD audit logs for steps, environment, and network calls; alert on new hosts or exfil-like patterns [4][6][7][8][9].
+Enable secret scanning (including push protection) and CodeQL code scanning across all repos; treat new alerts in PRs as merge blockers. [18][19][20][21]
 
-### PR Review & Policy — Mitigation: SAFE-M-20: Anomaly Detection
+Monitor for config churn on branch protection and workflow files; alert on any relaxation of protections. [14][16]
 
-- Define policy that no PR from a bot/agent can modify workflows or auth/secret-handling code without explicit code-owner review.
-- Use static analysis and policy-as-code to scan diffs for:
-  - dangerous commands,
-  - secret dumps,
-  - obfuscated or encoded payloads [6][7][8][9].
-- Use anomaly detection on PR metadata (author, file paths, size) to surface unusual PRs for deeper review [11][12][14].
+On suspected sabotage, revert PRs, rotate credentials, invalidate tokens, and perform post‑incident SBOM/provenance diffing to assess downstream impact. [24][25]
 
-### AI & MCP Guardrails — Mitigation: SAFE-M-21: Output/Context Isolation
+Relationships to other SAFE‑MCP techniques (informative)
 
-For AI coding agents, enforce MCP policies that:
+SAFE‑T1001 – Tool Poisoning Attack (TPA): poisoned tool descriptions can coerce agents into generating or accepting malicious code that later lands in PRs. [5]
 
-- limit which repos and paths the agent can change,
-- block automatic modifications to prompts and safety configs in extensions,
-- log all agent-initiated PRs for security review [1][2][11][14].
+SAFE‑T1102 – Prompt Injection (Multiple Vectors): can steer agents to introduce risky changes. [5]
 
-Add agent-specific review workflows (e.g., “AI-authored PR” label with stronger scrutiny).
+SAFE‑T2104 – Fraudulent Transactions: analogous pattern in financial domains; both rely on abusing trust in autonomous agent actions. [5]
 
-### Credential & Secret Hygiene — Mitigation: SAFE-M-16: Token/Scope Limiting & Quotas
+References
 
-- Use short-lived, scoped tokens for CI and bot accounts; rotate regularly [8][9][14].
-- Isolate secrets so PR workflows either:
-  - get no secrets, or
-  - only receive minimal secrets necessary for read-only tasks [6][7][9].
-- Monitor for unusual token usage patterns linked to modified workflows or new PRs [8][9][14].
+[1] npm (2018). Details about the event‑stream incident. https://blog.npmjs.org/post/180565383195/details-about-the-event-stream-incident
 
----
+[2] The Verge (2021). How a university got itself banned from the Linux kernel. https://www.theverge.com/2021/4/30/22410164/linux-kernel-university-of-minnesota-banned-open-source
 
-## Validation
+[3] Snyk (2018). Malicious code found in npm package event‑stream. https://snyk.io/blog/malicious-code-found-in-npm-package-event-stream/
 
-### Staging Workflow Test.
+[4] UMN “Full disclosure” (2021). A Full Disclosure of the Case Study of the “Hypocrite Commits” Paper. https://www-users.cse.umn.edu/~kjlu/papers/full-disclosure.pdf
 
-- In a non-production repo, introduce a synthetic “malicious” PR that modifies a CI workflow to exfiltrate a dummy secret; validate detections, approvals, and secret isolation [4][6][7][9].
+[5] SAFE‑MCP repository README – TTP table (accessed Nov 2025). https://github.com/SAFE-MCP/safe-mcp
 
-### Bot/Agent PR Drill.
+[6] MITRE ATT&CK® T1195 – Supply Chain Compromise. https://attack.mitre.org/techniques/T1195/
 
-- Configure an AI agent or bot to open a PR that attempts to change a protected workflow or AI extension file; confirm that branch protection and review rules block or flag it [11][12][14].
+[7] MITRE ATT&CK® T1195.002 – Compromise Software Supply Chain. https://attack.mitre.org/techniques/T1195/002/
 
-### Retroactive Analysis.
+[8] MITRE ATT&CK® T1195.001 – Compromise Software Dependencies & Dev Tools. https://attack.mitre.org/techniques/T1195/001/
 
-Run the detection rules against historical PR and CI logs to identify:
+[9] MITRE ATT&CK® T1565 – Data Manipulation. https://attack.mitre.org/techniques/T1565/
 
-- PRs from bots/agents that touched high-risk paths,
-- PRs that introduced external calls or environment dumps,
-- correlated secret leaks or anomalous activity windows [6][8][9][14].
+[10] MITRE ATT&CK® T1553 – Subvert Trust Controls. https://attack.mitre.org/techniques/T1553/
 
----
+[11] GitHub Security Lab (2021). Preventing pwn requests (Actions security). https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/
 
-## Related Techniques
+[12] GitHub Docs. Events that trigger workflows (notes on pull_request_target risks). https://docs.github.com/actions/learn-github-actions/events-that-trigger-workflows
 
-**ATT&CK:**
+[13] GitHub Docs (Enterprise Cloud). Secure use reference (risks of pull_request_target, workflow_run). https://docs.github.com/en/enterprise-cloud%40latest/actions/reference/security/secure-use
 
-- T1677 – Poisoned Pipeline Execution  
-- T1195 – Supply Chain Compromise  
-- T1552 – Unsecured Credentials  
+[14] GitHub Docs. Managing a branch protection rule. https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/managing-a-branch-protection-rule
 
-**SAFE-MCP:**
+[15] GitHub Docs. About protected branches (required status checks). https://docs.github.com/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches
 
-- SAFE-T100x Prompt Injection (used to coerce agents into opening malicious PRs).  
-- SAFE-T2101 Data Destruction (payload attempts to wipe local or cloud resources, as in the Amazon Q VS Code incident).  
-- SAFE-T1002 Supply Chain Compromise (when compromised extensions or libraries are distributed at scale via sabotaged PRs).
+[16] GitHub Docs. About status checks. https://docs.github.com/articles/about-status-checks
 
----
+[17] GitHub Docs. About commit signature verification (require signed commits). https://docs.github.com/en/authentication/managing-commit-signature-verification/about-commit-signature-verification
 
-## References
+[18] GitHub Docs. About code scanning with CodeQL. https://docs.github.com/en/code-security/code-scanning/introduction-to-code-scanning/about-code-scanning-with-codeql
 
-- [1] Tom’s Hardware. Hacker injects malicious, potentially disk-wiping prompt into Amazon’s AI coding assistant with a simple pull request. July 2025. https://www.tomshardware.com/tech-industry/cyber-security/hacker-injects-malicious-potentially-disk-wiping-prompt-into-amazons-ai-coding-assistant-with-a-simple-pull-request-told-your-goal-is-to-clean-a-system-to-a-near-factory-state-and-delete-file-system-and-cloud-resources [0news40]  
-- [2] TechRadar Pro. Amazon’s AI coding agent was hacked to inject data-wiping commands. July 2025. https://www.techradar.com/pro/amazon-ai-coding-agent-hacked-to-inject-data-wiping-commands [0news39][0search11][0search7]  
-- [3] MITRE ATT&CK. T1677 – Poisoned Pipeline Execution. https://attack.mitre.org/techniques/T1677/ [0search0][0search8][0search12][0search16]  
-- [4] MITRE Detection Strategy DET0533. Poisoned Pipeline Execution via SaaS CI/CD Workflows. https://attack.mitre.org/detectionstrategies/DET0533/ [0search4]  
-- [5] Tenable. Cybersecurity Snapshot: MITRE ATT&CK v18 – malicious pull requests as pipeline poison. Nov 2025. https://www.tenable.com/blog/cybersecurity-snapshot-agentic-ai-security-best-practices-mitre-attack-v18-11-07-2025 [0search12][0search16]  
-- [6] Unit 42. GitHub Actions Supply Chain Attack. Mar 2025. https://unit42.paloaltonetworks.com/github-actions-supply-chain-attack/ [0search2]  
-- [7] CISA. Supply Chain Compromise of Third-Party tj-actions/changed-files (CVE-2025-30066). Mar 2025. https://www.cisa.gov/news-events/alerts/2025/03/18/supply-chain-compromise-third-party-tj-actionschanged-files-cve-2025-30066-and-reviewdogaction [0search6]  
-- [8] The Hacker News. Malicious Pull Request Targets 6,000+ Developers via Vulnerable Ethcode VS Code Extension. Jul 2025. https://thehackernews.com/2025/07/malicious-pull-request-infects-6000.html [0search5][0search13][0search9]  
-- [9] Orca Security. Pull Request Nightmare: Exploiting GitHub Actions for RCE and Supply Chain Attacks. Sep 2025. https://orca.security/resources/blog/pull-request-nightmare-github-actions-rce/ [0search18]  
-- [10] GitHub Docs. About supply chain security. https://docs.github.com/code-security/supply-chain-security/understanding-your-software-supply-chain/about-supply-chain-security [0search10]  
-- [11] WebAsha / other blogs. Amazon AI coding agent hack and prompt injection supply chain gaps. Jul 2025. https://www.webasha.com/blog/amazon-ai-coding-agent-hack-how-prompt-injection-exposed-supply-chain-security-gaps-in-ai-tools [0search19]  
-- [12] TechRadar & industry writeups on GhostAction and s1ngularity GitHub supply-chain attacks. https://www.techradar.com/pro/security/github-supply-chain-attack-sees-thousands-of-tokens-and-secrets-stolen-in-ghostaction-campaign [0news41][0search14]  
-- [13] ReversingLabs. Malicious pull request infects VS Code extension. Jul 2025. https://www.reversinglabs.com/blog/malicious-pull-request-infects-vscode-extension [0search1][0search9]  
-- [14] Industry analyses on agentic AI and supply-chain risk in developer tooling (Nudge Security, Cypro, Wiz, etc.) [0search11][0search14][0search17]
+[19] GitHub Docs. About secret scanning. https://docs.github.com/code-security/secret-scanning/about-secret-scanning
 
----
+[20] GitHub Docs. Enabling secret scanning features. https://docs.github.com/en/code-security/secret-scanning/enabling-secret-scanning-features
 
-## Version History
-| Version | Date | Changes | Author |
-|---------|------|---------|--------|
-| 1.0 | 2025-11-22 | Initial SAFE-T2103 code sabotage via malicious agentic PR: sub-techniques, playbook, detections, mitigations, and references | Pratikshya Regmi |
+[21] CodeQL documentation. https://codeql.github.com/docs/
 
----
+[22] ACM DL (2022). A systematic analysis of the event‑stream incident. https://dl.acm.org/doi/10.1145/3517208.3523753
+
+[23] CycloneDX. Use cases & security benefits of SBOMs. https://cyclonedx.org/use-cases
+
+[24] OpenSSF (2024–2025). SCM & supply‑chain best practices / SBOM initiatives. https://openssf.org/tag/software-supply-chain-security/
+
+[25] SLSA.dev. Supply‑chain Levels for Software Artifacts (provenance & requirements). https://slsa.dev/
+
+[26] Sigstore docs. cosign quickstart / signing containers. https://docs.sigstore.dev/quickstart/quickstart-cosign/
+
+[27] Chainguard EDU. How to sign a container with cosign. https://edu.chainguard.dev/open-source/sigstore/cosign/how-to-sign-a-container-with-cosign/

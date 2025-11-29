@@ -1,93 +1,87 @@
-
----
-
-`techniques/SAFE-T2103/detection-rule.yml`
-
-```yaml
-title: Code Sabotage via Malicious Agentic Pull Request
-id: 2e0a9149-6f5e-4b3a-9c72-1a3b4f9098e1
+title: MCP Agent Code Sabotage via PR
+id: 3d2f0e56-44c1-4baf-9e3d-bd9efc3b7c12
 status: experimental
-description: >
-  Detects suspicious pull requests, especially those authored by agents/bots or
-  service accounts, that modify CI/CD workflows, deployment infrastructure, or
-  AI tooling/extension code in ways consistent with SAFE-T2103 code sabotage.
-author: SAFE-MCP Team
-date: 2025-11-22
+description: Detects MCP agent/bot-authored pull requests or commits that introduce risky changes (auth/CI/dependencies/telemetry) indicative of code sabotage.
+author: Arjun Subedi (Astha.ai)
+date: 2025-11-27
+modified: 2025-11-27
 references:
   - https://attack.mitre.org/techniques/T1677/
-  - https://attack.mitre.org/detectionstrategies/DET0533/
-  - https://unit42.paloaltonetworks.com/github-actions-supply-chain-attack/
-  - https://www.cisa.gov/news-events/alerts/2025/03/18/supply-chain-compromise-third-party-tj-actionschanged-files-cve-2025-30066-and-reviewdogaction
-  - https://thehackernews.com/2025/07/malicious-pull-request-infects-6000.html
-  - https://orca.security/resources/blog/pull-request-nightmare-github-actions-rce/
-  - https://www.tomshardware.com/tech-industry/cyber-security/hacker-injects-malicious-potentially-disk-wiping-prompt-into-amazons-ai-coding-assistant-with-a-simple-pull-request-told-your-goal-is-to-clean-a-system-to-a-near-factory-state-and-delete-file-system-and-cloud-resources
+  - https://attack.mitre.org/techniques/T1195/
+  - https://attack.mitre.org/techniques/T1554/
+  - https://github.com/safe-mcp/techniques/SAFE-T2103
 logsource:
-  product: github
-  service: audit
-  definition: Pull request events enriched with changed file paths and diff snippets
+  product: mcp
+  service: repo_activity
 detection:
-  selection_pr_events:
+  selection_pr:
     event_type:
-      - pull_request.opened
-      - pull_request.synchronize
-      - pull_request.edited
-  selection_ai_or_bot_actor:
-    actor_login|endswith:
-      - "[bot]"
-      - "-bot"
-      - "-agent"
-    # Optionally include known MCP/agent service accounts here
-  selection_sensitive_paths:
-    file_path|contains:
-      - ".github/workflows/"
-      - ".gitlab-ci.yml"
-      - "Jenkinsfile"
-      - "azure-pipelines.yml"
-      - "Dockerfile"
-      - "k8s/"
-      - "infra/"
-      - "deploy/"
-      - "terraform/"
-      - "ansible/"
-      - "extensions/"
-      - "vs-code/"
-      - "vscode/"
-  selection_suspicious_diff:
-    diff_added|contains:
+      - pull_request
+      - commit
+  selection_actor:
+    actor_type|contains:
+      - agent
+      - bot
+      - service_account
+  selection_risky_files:
+    files_modified|contains:
+      - "auth"
+      - "login"
+      - "session"
+      - "token"
+      - "secrets"
+      - "ci.yml"
+      - ".github/workflows"
+      - "pipeline"
+      - "requirements.txt"
+      - "package.json"
+      - "telemetry"
+      - "analytics"
+  selection_workflow_unsafe:
+    pr_diff|contains:
+      - "pull_request_target"
+      - "permissions: write-all"
+      - "GITHUB_TOKEN"
+      - "uses: actions/checkout@"
+  selection_new_endpoints:
+    pr_diff|contains:
+      - "http://"
+      - "https://"
+      - "ftp://"
+  selection_base64:
+    pr_diff|contains:
+      - "base64"
+      - "decode("
+      - "ZXh0cmFjdA"  # base64 for 'extract'
+  selection_package_scripts:
+    pr_diff|contains:
+      - "postinstall"
+      - "preinstall"
       - "curl "
       - "wget "
-      - "Invoke-WebRequest"
-      - "powershell "
       - "bash -c"
-      - "sh -c"
-      - "base64"
-      - "nc "
-      - "aws s3 rm"
-      - "aws ec2 terminate-instances"
-  condition: selection_pr_events AND selection_sensitive_paths AND selection_ai_or_bot_actor
-  # For higher precision, you can require suspicious diff content as well:
-  # condition: selection_pr_events AND selection_sensitive_paths AND selection_ai_or_bot_actor AND selection_suspicious_diff
-fields:
-  - event_time
-  - actor_login
-  - actor_ip
-  - actor_user_agent
-  - repository
-  - pull_request_number
-  - pull_request_title
-  - pull_request_url
-  - file_path
-  - diff_added
-  - diff_removed
+  condition: selection_pr and selection_actor and (selection_risky_files or selection_workflow_unsafe or selection_package_scripts or selection_new_endpoints or selection_base64)
 falsepositives:
-  - Legitimate automation/bot PRs refactoring CI/CD or deployment code under strict review
-  - Bulk migrations or security-hardening PRs that introduce new tooling and scripts
+  - Legitimate bot-driven refactors or dependency updates with review
+  - Expected CI/telemetry changes during planned upgrades
+  - Automated security fixes from trusted bots (dependabot/renovate) after verification
 level: high
 tags:
-  - attack.T1677
-  - attack.T1195
-  - attack.T1552
-  - safe-mcp.safe-t2103
-  - supply-chain
-  - ci-cd
-  - github
+  - attack.impact
+  - attack.t1195
+  - attack.t1554
+  - attack.t1677
+  - safe.t2103
+  - mcp.repo
+  - mcp.agent
+fields:
+  - event_type
+  - actor
+  - actor_type
+  - files_modified
+  - pr_title
+  - pr_description
+  - pr_diff
+  - repository
+  - branch
+  - timestamp
